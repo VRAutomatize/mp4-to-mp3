@@ -10,6 +10,14 @@ app = FastAPI()
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", 50))
 API_TOKEN = os.getenv("API_TOKEN", "token-default")
 
+# Função para verificar se o FFmpeg está instalado
+def is_ffmpeg_installed():
+    try:
+        subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True, text=True)
+        return True
+    except FileNotFoundError:
+        return False
+
 async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, bytes]:
     """Converts the video to MP3 and extracts the first frame as JPEG."""
     output_mp3_path = input_path.replace(".mp4", ".mp3")
@@ -17,20 +25,25 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
 
     try:
         # Convert to MP3
-        subprocess.run(
+        mp3_result = subprocess.run(
             ["ffmpeg", "-i", input_path, "-y", "-q:a", "0", "-map", "a", output_mp3_path],
             check=True,
             capture_output=True,  # Capture stdout and stderr for debugging
-            text=True  # Ensure output is treated as text
+            text=True
         )
 
+        if mp3_result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Erro ao converter para MP3: {mp3_result.stderr}")
+
         # Extract the first frame as JPEG
-        subprocess.run(
+        jpeg_result = subprocess.run(
             ["ffmpeg", "-i", input_path, "-y", "-ss", "00:00:00", "-vframes", "1", output_jpeg_path],
             check=True,
             capture_output=True,  # Capture stdout and stderr for debugging
-            text=True  # Ensure output is treated as text
+            text=True
         )
+        if jpeg_result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Erro ao extrair o frame JPEG: {jpeg_result.stderr}")
 
         # Read the MP3 file
         with open(output_mp3_path, "rb") as mp3_file:
@@ -42,15 +55,9 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
 
         return mp3_data, jpeg_data
 
-    except subprocess.CalledProcessError as e:
-        # Log stdout and stderr for better error diagnosis
-        print(f"FFmpeg error: {e.stderr}")
-        raise HTTPException(status_code=500, detail=f"Erro ao converter com FFmpeg: {e}")
     except FileNotFoundError as e:
-        print(f"File not found: {e}")
         raise HTTPException(status_code=500, detail=f"Arquivo não encontrado após a conversão/extração: {e}")
     except Exception as e:
-        print(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=f"Erro inesperado: {e}")
     finally:
         # Clean up input and output files (only if they exist)
@@ -61,6 +68,11 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
 
 @app.post("/convert")
 async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)):
+
+    # Verificar se o FFmpeg está instalado antes de processar
+    if not is_ffmpeg_installed():
+        raise HTTPException(status_code=500, detail="FFmpeg não está instalado no servidor.")
+
     if authorization != f"Bearer {API_TOKEN}":
         raise HTTPException(status_code=401, detail="Token inválido")
 
@@ -86,5 +98,4 @@ async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Head
     except HTTPException as e:
         raise e  # Re-raise HTTPExceptions
     except Exception as e:
-        print(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=f"Erro inesperado: {e}")
