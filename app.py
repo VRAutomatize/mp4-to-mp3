@@ -1,7 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Header, Response
 import shutil, os, uuid, subprocess
 from dotenv import load_dotenv
-from typing import Tuple
+from typing import Tuple, Dict, Any
 
 load_dotenv()
 
@@ -67,8 +67,7 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
 
 
 @app.post("/convert")
-async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)):
-
+async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)) -> Dict[str, Response]:  # Type hint for return
     # Verificar se o FFmpeg está instalado antes de processar
     if not is_ffmpeg_installed():
         raise HTTPException(status_code=500, detail="FFmpeg não está instalado no servidor.")
@@ -89,7 +88,7 @@ async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Head
     try:
         mp3_data, jpeg_data = await convert_to_mp3_and_extract_frame(input_path)
 
-        # Return both MP3 and JPEG data
+        # Return both MP3 and JPEG data as Responses directly
         return {
             "mp3": Response(content=mp3_data, media_type="audio/mpeg"),
             "jpeg": Response(content=jpeg_data, media_type="image/jpeg"),
