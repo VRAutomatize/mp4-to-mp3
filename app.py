@@ -1,44 +1,34 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Header
-from fastapi.responses import FileResponse
-import os
-import uuid
-import subprocess
+from fastapi import FastAPI, File, UploadFile, HTTPException, Header
+import shutil, os, uuid, subprocess
+from dotenv import load_dotenv
+
+load_dotenv()  # Carrega variáveis do .env
 
 app = FastAPI()
 
-MAX_UPLOAD_SIZE_MB = 50  # Limite de upload em MB
-AUTH_TOKEN = "seu-token-seguro-aqui"
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", 50))
+API_TOKEN = os.getenv("API_TOKEN", "token-default")
 
-@app.middleware("http")
-async def check_authorization_and_size(request: Request, call_next):
-    # Autenticação por token
-    auth = request.headers.get("authorization")
-    if auth != f"Bearer {AUTH_TOKEN}":
+@app.post("/convert")
+async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)):
+    if authorization != f"Bearer {API_TOKEN}":
         raise HTTPException(status_code=401, detail="Token inválido")
 
-    # Verifica Content-Length para limitar tamanho do upload
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Arquivo excede o tamanho máximo permitido (50MB)")
+    contents = await file.read()
 
-    return await call_next(request)
+    if len(contents) > MAX_FILE_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Arquivo maior que {MAX_FILE_SIZE_MB}MB")
 
-@app.post("/extract-audio")
-async def extract_audio(file: UploadFile = File(...)):
-    input_filename = f"/tmp/{uuid.uuid4()}.mp4"
-    output_filename = input_filename.replace(".mp4", ".mp3")
+    input_path = f"/tmp/{uuid.uuid4()}.mp4"
+    output_path = input_path.replace(".mp4", ".mp3")
 
-    # Salva vídeo temporariamente
-    with open(input_filename, "wb") as f:
-        f.write(await file.read())
+    with open(input_path, "wb") as f:
+        f.write(contents)
 
     try:
-        # Extrai áudio com ffmpeg
-        subprocess.run([
-            "ffmpeg", "-i", input_filename, "-vn",
-            "-ar", "44100", "-ac", "2", "-b:a", "192k", output_filename
-        ], check=True)
+        subprocess.run(["ffmpeg", "-i", input_path, "-q:a", "0", "-map", "a", output_path], check=True)
+        return {"message": "Convertido com sucesso", "file_path": output_path}
     except subprocess.CalledProcessError:
-        raise HTTPException(status_code=500, detail="Erro ao extrair áudio com ffmpeg")
-
-    return FileResponse(output_filename, media_type="audio/mpeg", filename="output.mp3")
+        raise HTTPException(status_code=500, detail="Erro ao converter com FFmpeg")
+    finally:
+        os.remove(input_path)
