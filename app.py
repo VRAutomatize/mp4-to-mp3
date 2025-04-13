@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Header, Response
-import shutil, os, uuid, subprocess
+import shutil, os, uuid, subprocess, base64
 from dotenv import load_dotenv
 from typing import Tuple, Dict, Any
 
@@ -66,8 +66,8 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
                 os.remove(file_path)
 
 
-@app.post("/convert", response_model=None) # Disable response model generation
-async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)):
+@app.post("/convert") # Removi response_model=None, pois agora retornamos um dict padrão
+async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)) -> Dict[str, str]: # Retorna Dict[str, str]
     # Verificar se o FFmpeg está instalado antes de processar
     if not is_ffmpeg_installed():
         raise HTTPException(status_code=500, detail="FFmpeg não está instalado no servidor.")
@@ -88,10 +88,14 @@ async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Head
     try:
         mp3_data, jpeg_data = await convert_to_mp3_and_extract_frame(input_path)
 
-        # Return both MP3 and JPEG data as Responses directly
+        # Codificar os dados binários em Base64
+        mp3_base64 = base64.b64encode(mp3_data).decode('utf-8')
+        jpeg_base64 = base64.b64encode(jpeg_data).decode('utf-8')
+
+        # Retornar um dicionário JSON com os dados codificados em Base64
         return {
-            "mp3": Response(content=mp3_data, media_type="audio/mpeg"),
-            "jpeg": Response(content=jpeg_data, media_type="image/jpeg"),
+            "mp3_base64": mp3_base64,
+            "jpeg_base64": jpeg_base64,
         }
 
     except HTTPException as e:
