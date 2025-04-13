@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Header
+from fastapi import FastAPI, File, UploadFile, HTTPException, Header, Response
 import shutil, os, uuid, subprocess
 from dotenv import load_dotenv
 
@@ -26,9 +26,18 @@ async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Head
         f.write(contents)
 
     try:
-        subprocess.run(["ffmpeg", "-i", input_path, "-q:a", "0", "-map", "a", output_path], check=True)
-        return {"message": "Convertido com sucesso", "file_path": output_path}
-    except subprocess.CalledProcessError:
-        raise HTTPException(status_code=500, detail="Erro ao converter com FFmpeg")
+        subprocess.run(["ffmpeg", "-i", input_path, "-y", "-q:a", "0", "-map", "a", output_path], check=True) # Adicionei o -y para sobrescrever arquivos existentes
+        with open(output_path, "rb") as mp3_file:
+            mp3_data = mp3_file.read()
+
+        return Response(content=mp3_data, media_type="audio/mpeg") # Retorna o binário do MP3 como resposta
+
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao converter com FFmpeg: {e}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Arquivo MP3 não encontrado após a conversão")
     finally:
-        os.remove(input_path)
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
