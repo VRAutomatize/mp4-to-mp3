@@ -66,8 +66,8 @@ async def convert_to_mp3_and_extract_frame(input_path: str) -> Tuple[bytes, byte
                 os.remove(file_path)
 
 
-@app.post("/convert")
-async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)) -> Dict[str, Response]:  # Type hint for return
+@app.post("/convert", response_model=None) # Disable response model generation
+async def convert_to_mp3(file: UploadFile = File(...), authorization: str = Header(None)):
     # Verificar se o FFmpeg está instalado antes de processar
     if not is_ffmpeg_installed():
         raise HTTPException(status_code=500, detail="FFmpeg não está instalado no servidor.")
